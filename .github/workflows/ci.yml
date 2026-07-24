@@ -35,3 +35,6 @@ jobs:
 
       - name: Inspect package
         run: pnpm pack --dry-run
+
+      - name: Scan community package
+        run: npx --yes @n8n/scan-community-package@beta n8n-nodes-webhound
