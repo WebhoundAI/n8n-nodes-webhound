@@ -1,4 +1,5 @@
-import type { IDataObject } from 'n8n-workflow';
+import type { IDataObject, INode } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 
 import type { WebhoundOperation } from './webhound.constants';
 
@@ -8,16 +9,18 @@ export interface PreparedWebhoundCall {
 	spendBearing: boolean;
 }
 
-export class WebhoundInputError extends Error {}
+export { NodeOperationError as WebhoundInputError };
 
 function requiredString(
 	parameters: Readonly<Record<string, unknown>>,
 	name: string,
+	node: INode,
 	minimumLength = 1,
 ): string {
 	const value = String(parameters[name] ?? '').trim();
 	if (value.length < minimumLength) {
-		throw new WebhoundInputError(
+		throw new NodeOperationError(
+			node,
 			`${name} is required and must contain at least ${minimumLength} characters.`,
 		);
 	}
@@ -32,20 +35,30 @@ function optionalString(
 	return value || undefined;
 }
 
-function requiredBudget(parameters: Readonly<Record<string, unknown>>): number {
+function requiredBudget(
+	parameters: Readonly<Record<string, unknown>>,
+	node: INode,
+): number {
 	const value = parameters.budget;
 	if (typeof value !== 'number' || !Number.isFinite(value)) {
-		throw new WebhoundInputError('budget is required and must be a dollar amount from 1 to 500.');
+		throw new NodeOperationError(
+			node,
+			'budget is required and must be a dollar amount from 1 to 500.',
+		);
 	}
 	if (value < 1 || value > 500) {
-		throw new WebhoundInputError('budget must be between $1 and $500.');
+		throw new NodeOperationError(node, 'budget must be between $1 and $500.');
 	}
 	return value;
 }
 
-function requireSpendConfirmation(parameters: Readonly<Record<string, unknown>>): void {
+function requireSpendConfirmation(
+	parameters: Readonly<Record<string, unknown>>,
+	node: INode,
+): void {
 	if (parameters.confirm_spend !== true) {
-		throw new WebhoundInputError(
+		throw new NodeOperationError(
+			node,
 			'This action can start spend. Set confirm_spend=true only after approving the displayed dollar budget.',
 		);
 	}
@@ -62,6 +75,7 @@ function optionalBoolean(
 
 function optionalDatasetSchema(
 	parameters: Readonly<Record<string, unknown>>,
+	node: INode,
 ): IDataObject | undefined {
 	const raw = optionalString(parameters, 'schemaJson');
 	if (!raw) return undefined;
@@ -71,12 +85,14 @@ function optionalDatasetSchema(
 		parsed = JSON.parse(raw);
 	} catch (error) {
 		const detail = error instanceof SyntaxError ? error.message : 'invalid JSON';
-		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- The execute method converts this pure validation error to NodeOperationError.
-		throw new WebhoundInputError(`schemaJson must contain valid JSON: ${detail}`);
+		throw new NodeOperationError(
+			node,
+			`schemaJson must contain valid JSON: ${detail}`,
+		);
 	}
 
 	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-		throw new WebhoundInputError('schemaJson must decode to a JSON object.');
+		throw new NodeOperationError(node, 'schemaJson must decode to a JSON object.');
 	}
 
 	return parsed as IDataObject;
@@ -90,11 +106,12 @@ function setIfDefined(target: IDataObject, name: string, value: unknown): void {
 
 function startReport(
 	parameters: Readonly<Record<string, unknown>>,
+	node: INode,
 ): PreparedWebhoundCall {
-	requireSpendConfirmation(parameters);
+	requireSpendConfirmation(parameters, node);
 	const argumentsValue: IDataObject = {
-		prompt: requiredString(parameters, 'prompt', 8),
-		budget: requiredBudget(parameters),
+		prompt: requiredString(parameters, 'prompt', node, 8),
+		budget: requiredBudget(parameters, node),
 		enable_checkpoints: optionalBoolean(parameters, 'enableCheckpoints', false),
 		use_free_run_when_available: optionalBoolean(parameters, 'useFreeRunWhenAvailable', true),
 	};
@@ -113,15 +130,16 @@ function startReport(
 
 function startDataset(
 	parameters: Readonly<Record<string, unknown>>,
+	node: INode,
 ): PreparedWebhoundCall {
-	requireSpendConfirmation(parameters);
+	requireSpendConfirmation(parameters, node);
 	const argumentsValue: IDataObject = {
-		prompt: requiredString(parameters, 'prompt', 8),
-		budget: requiredBudget(parameters),
+		prompt: requiredString(parameters, 'prompt', node, 8),
+		budget: requiredBudget(parameters, node),
 		enable_checkpoints: optionalBoolean(parameters, 'enableCheckpoints', false),
 		use_free_run_when_available: optionalBoolean(parameters, 'useFreeRunWhenAvailable', true),
 	};
-	setIfDefined(argumentsValue, 'schema', optionalDatasetSchema(parameters));
+	setIfDefined(argumentsValue, 'schema', optionalDatasetSchema(parameters, node));
 	setIfDefined(argumentsValue, 'title', optionalString(parameters, 'title'));
 	return {
 		toolName: 'webhound_start_dataset',
@@ -132,8 +150,9 @@ function startDataset(
 
 function watchWait(
 	parameters: Readonly<Record<string, unknown>>,
+	node: INode,
 ): PreparedWebhoundCall {
-	const sessionId = requiredString(parameters, 'sessionId');
+	const sessionId = requiredString(parameters, 'sessionId', node);
 	const rawWaitSeconds = parameters.waitSeconds;
 	if (
 		typeof rawWaitSeconds !== 'number' ||
@@ -141,7 +160,10 @@ function watchWait(
 		rawWaitSeconds < 0 ||
 		rawWaitSeconds > 110
 	) {
-		throw new WebhoundInputError('waitSeconds must be a whole number from 0 to 110.');
+		throw new NodeOperationError(
+			node,
+			'waitSeconds must be a whole number from 0 to 110.',
+		);
 	}
 	if (rawWaitSeconds === 0) {
 		return {
@@ -158,7 +180,8 @@ function watchWait(
 		rawPollInterval < 3 ||
 		rawPollInterval > 30
 	) {
-		throw new WebhoundInputError(
+		throw new NodeOperationError(
+			node,
 			'pollIntervalSeconds must be a whole number from 3 to 30.',
 		);
 	}
@@ -175,9 +198,10 @@ function watchWait(
 
 function getOutput(
 	parameters: Readonly<Record<string, unknown>>,
+	node: INode,
 ): PreparedWebhoundCall {
 	const argumentsValue: IDataObject = {
-		session_id: requiredString(parameters, 'sessionId'),
+		session_id: requiredString(parameters, 'sessionId', node),
 		kind: String(parameters.kind || 'auto'),
 		select: String(parameters.select || 'output'),
 		allow_partial: optionalBoolean(parameters, 'allowPartial', false),
@@ -192,11 +216,12 @@ function getOutput(
 
 function getEvidencePack(
 	parameters: Readonly<Record<string, unknown>>,
+	node: INode,
 ): PreparedWebhoundCall {
 	return {
 		toolName: 'webhound_get_evidence_pack',
 		arguments: {
-			session_id: requiredString(parameters, 'sessionId'),
+			session_id: requiredString(parameters, 'sessionId', node),
 			kind: String(parameters.kind || 'auto'),
 			include_working_docs: optionalBoolean(parameters, 'includeWorkingDocs', true),
 			include_claims: optionalBoolean(parameters, 'includeClaims', true),
@@ -222,18 +247,19 @@ function help(parameters: Readonly<Record<string, unknown>>): PreparedWebhoundCa
 export function prepareWebhoundCall(
 	operation: WebhoundOperation,
 	parameters: Readonly<Record<string, unknown>>,
+	node: INode,
 ): PreparedWebhoundCall {
 	switch (operation) {
 		case 'startReport':
-			return startReport(parameters);
+			return startReport(parameters, node);
 		case 'startDataset':
-			return startDataset(parameters);
+			return startDataset(parameters, node);
 		case 'watchWait':
-			return watchWait(parameters);
+			return watchWait(parameters, node);
 		case 'getOutput':
-			return getOutput(parameters);
+			return getOutput(parameters, node);
 		case 'getEvidencePack':
-			return getEvidencePack(parameters);
+			return getEvidencePack(parameters, node);
 		case 'account':
 			return {
 				toolName: 'webhound_account',
