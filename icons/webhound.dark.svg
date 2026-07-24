@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Webhound">
+  <rect width="256" height="256" rx="48" fill="#FAFAF7"/>
+  <path d="M50 61h31l20 91 27-65h18l28 65 19-91h31l-32 135h-28l-27-62-27 62H82z" fill="#0B0B0C"/>
+  <circle cx="188" cy="63" r="25" fill="#FAFAF7" stroke="#0B0B0C" stroke-width="13"/>
+  <path d="m206 82 21 21" stroke="#0B0B0C" stroke-width="13" stroke-linecap="round"/>
+</svg>

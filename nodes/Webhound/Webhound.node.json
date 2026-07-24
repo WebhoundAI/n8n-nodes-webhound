@@ -1,0 +1,18 @@
+{
+	"node": "n8n-nodes-webhound",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Productivity", "Analytics", "Data & Storage"],
+	"resources": {
+		"credentialDocumentation": [
+			{
+				"url": "https://github.com/WebhoundAI/n8n-nodes-webhound#credentials"
+			}
+		],
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/WebhoundAI/n8n-nodes-webhound"
+			}
+		]
+	}
+}

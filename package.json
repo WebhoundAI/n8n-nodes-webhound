@@ -1,0 +1,67 @@
+{
+	"name": "n8n-nodes-webhound",
+	"version": "0.1.0",
+	"description": "Run budgeted Webhound reports and datasets, wait for honest completion, and retrieve the result with its evidence.",
+	"license": "MIT",
+	"homepage": "https://www.webhound.ai",
+	"keywords": [
+		"n8n-community-node-package",
+		"n8n",
+		"webhound",
+		"research",
+		"dataset",
+		"evidence",
+		"mcp"
+	],
+	"author": {
+		"name": "Webhound",
+		"email": "team@webhound.ai",
+		"url": "https://www.webhound.ai"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/WebhoundAI/n8n-nodes-webhound.git"
+	},
+	"bugs": {
+		"url": "https://github.com/WebhoundAI/n8n-nodes-webhound/issues"
+	},
+	"packageManager": "pnpm@11.9.0",
+	"engines": {
+		"node": ">=22.22.0"
+	},
+	"scripts": {
+		"build": "n8n-node build",
+		"build:watch": "tsc --watch",
+		"dev": "n8n-node dev",
+		"lint": "n8n-node lint",
+		"lint:fix": "n8n-node lint --fix",
+		"typecheck": "tsc --noEmit --incremental false",
+		"test": "pnpm build && node --test test/*.test.mjs",
+		"verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm audit --audit-level high",
+		"release": "n8n-node release",
+		"prepublishOnly": "n8n-node prerelease"
+	},
+	"files": [
+		"dist"
+	],
+	"n8n": {
+		"n8nNodesApiVersion": 1,
+		"strict": true,
+		"credentials": [
+			"dist/credentials/WebhoundApi.credentials.js"
+		],
+		"nodes": [
+			"dist/nodes/Webhound/Webhound.node.js"
+		]
+	},
+	"devDependencies": {
+		"@n8n/node-cli": "0.40.3",
+		"eslint": "9.39.4",
+		"prettier": "3.8.3",
+		"release-it": "20.2.1",
+		"typescript": "5.9.3"
+	},
+	"peerDependencies": {
+		"n8n-workflow": "*"
+	}
+}
