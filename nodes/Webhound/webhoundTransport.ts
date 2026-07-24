@@ -2,8 +2,10 @@ import type {
 	IDataObject,
 	IExecuteFunctions,
 	IHttpRequestOptions,
+	INode,
 	JsonObject,
 } from 'n8n-workflow';
+import { NodeOperationError } from 'n8n-workflow';
 
 import {
 	WEBHOUND_MCP_ENDPOINT,
@@ -29,8 +31,6 @@ export interface WebhoundToolResult {
 	structuredContent: IDataObject;
 }
 
-export class WebhoundTransportError extends Error {}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -41,7 +41,7 @@ export function redactSecret(text: string, secret: string): string {
 	return value.split(secret).join('[REDACTED]');
 }
 
-export function parseSseEnvelope(body: string): JsonRpcEnvelope {
+export function parseSseEnvelope(body: string, node: INode): JsonRpcEnvelope {
 	let eventData: string[] = [];
 	const candidates: JsonRpcEnvelope[] = [];
 
@@ -72,33 +72,37 @@ export function parseSseEnvelope(body: string): JsonRpcEnvelope {
 		if (candidate.result !== undefined || candidate.error !== undefined) return candidate;
 	}
 
-	throw new WebhoundTransportError(
+	throw new NodeOperationError(
+		node,
 		'Webhound MCP returned no complete Server-Sent Event.',
 	);
 }
 
-export function parseMcpEnvelope(body: unknown, contentType = ''): JsonRpcEnvelope {
+export function parseMcpEnvelope(
+	body: unknown,
+	contentType: string,
+	node: INode,
+): JsonRpcEnvelope {
 	if (isRecord(body)) return body as JsonRpcEnvelope;
 
 	const text = typeof body === 'string' ? body : String(body ?? '');
 	if (contentType.toLowerCase().includes('text/event-stream') || text.includes('\ndata:')) {
-		return parseSseEnvelope(text);
+		return parseSseEnvelope(text, node);
 	}
 
+	let parsed: unknown;
 	try {
-		const parsed: unknown = JSON.parse(text);
-		if (!isRecord(parsed)) {
-			throw new WebhoundTransportError(
-				'Webhound MCP returned an invalid JSON-RPC envelope.',
-			);
-		}
-		return parsed as JsonRpcEnvelope;
-	} catch (error) {
-		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- The execute method converts this pure parser error to NodeOperationError.
-		if (error instanceof WebhoundTransportError) throw error;
-		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- The execute method converts this pure parser error to NodeOperationError.
-		throw new WebhoundTransportError('Webhound MCP returned invalid JSON.');
+		parsed = JSON.parse(text);
+	} catch {
+		throw new NodeOperationError(node, 'Webhound MCP returned invalid JSON.');
 	}
+	if (!isRecord(parsed)) {
+		throw new NodeOperationError(
+			node,
+			'Webhound MCP returned an invalid JSON-RPC envelope.',
+		);
+	}
+	return parsed as JsonRpcEnvelope;
 }
 
 function headerValue(headers: IDataObject | undefined, name: string): string {
@@ -112,33 +116,41 @@ function responseStatus(response: WebhoundHttpResponse): number {
 	return Number.isFinite(status) ? status : 200;
 }
 
-function assertHttpSuccess(response: WebhoundHttpResponse): void {
+function assertHttpSuccess(response: WebhoundHttpResponse, node: INode): void {
 	const status = responseStatus(response);
 	if ([301, 302, 303, 307, 308].includes(status)) {
-		throw new WebhoundTransportError(
+		throw new NodeOperationError(
+			node,
 			'Webhound MCP returned an unexpected redirect; WEBHOUND_KEY was not forwarded.',
 		);
 	}
 	if (status === 401 || status === 403) {
-		throw new WebhoundTransportError(
+		throw new NodeOperationError(
+			node,
 			'Webhound rejected WEBHOUND_KEY. Create or replace this user credential at https://www.webhound.ai/api.',
 		);
 	}
 	if (status === 429) {
-		throw new WebhoundTransportError(
+		throw new NodeOperationError(
+			node,
 			'Webhound is rate-limiting requests. Wait before trying again.',
 		);
 	}
 	if (status >= 500) {
-		throw new WebhoundTransportError(
+		throw new NodeOperationError(
+			node,
 			`Webhound MCP is temporarily unavailable (HTTP ${status}).`,
 		);
 	}
 	if (status >= 400) {
-		throw new WebhoundTransportError(`Webhound MCP rejected the request (HTTP ${status}).`);
+		throw new NodeOperationError(
+			node,
+			`Webhound MCP rejected the request (HTTP ${status}).`,
+		);
 	}
 	if (status !== 200 && status !== 201) {
-		throw new WebhoundTransportError(
+		throw new NodeOperationError(
+			node,
 			`Webhound MCP returned unexpected HTTP ${status}.`,
 		);
 	}
@@ -161,9 +173,10 @@ export function extractToolResult(
 	requestId: string,
 	secret: string,
 	toolName: string,
+	node: INode,
 ): WebhoundToolResult {
 	if (envelope.id !== undefined && envelope.id !== null && envelope.id !== requestId) {
-		throw new WebhoundTransportError('Webhound MCP returned a mismatched response.');
+		throw new NodeOperationError(node, 'Webhound MCP returned a mismatched response.');
 	}
 
 	if (isRecord(envelope.error)) {
@@ -172,16 +185,17 @@ export function extractToolResult(
 			String(envelope.error.message ?? 'Unknown MCP error'),
 			secret,
 		);
-		throw new WebhoundTransportError(`Webhound MCP error (${code}): ${message}`);
+		throw new NodeOperationError(node, `Webhound MCP error (${code}): ${message}`);
 	}
 
 	if (!isRecord(envelope.result)) {
-		throw new WebhoundTransportError('Webhound MCP returned no tool result.');
+		throw new NodeOperationError(node, 'Webhound MCP returned no tool result.');
 	}
 
 	const summary = joinTextContent(envelope.result.content);
 	if (envelope.result.isError === true) {
-		throw new WebhoundTransportError(
+		throw new NodeOperationError(
+			node,
 			redactSecret(summary || 'Webhound rejected the tool call.', secret),
 		);
 	}
@@ -204,6 +218,7 @@ export async function callWebhoundTool(
 	secret: string,
 ): Promise<WebhoundToolResult> {
 	const requestId = `n8n-${Date.now()}-${itemIndex}`;
+	const node = this.getNode();
 	const options: IHttpRequestOptions = {
 		method: 'POST',
 		url: WEBHOUND_MCP_ENDPOINT,
@@ -234,14 +249,15 @@ export async function callWebhoundTool(
 	try {
 		response = (await this.helpers.httpRequest.call(this, options)) as WebhoundHttpResponse;
 	} catch {
-		// eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- The execute method adds item context without exposing the credential-bearing request error.
-		throw new WebhoundTransportError(
+		throw new NodeOperationError(
+			node,
 			'Could not reach Webhound MCP. The request was not retried.',
+			{ itemIndex },
 		);
 	}
 
-	assertHttpSuccess(response);
+	assertHttpSuccess(response, node);
 	const contentType = headerValue(response.headers, 'content-type');
-	const envelope = parseMcpEnvelope(response.body, contentType);
-	return extractToolResult(envelope, requestId, secret, toolName);
+	const envelope = parseMcpEnvelope(response.body, contentType, node);
+	return extractToolResult(envelope, requestId, secret, toolName, node);
 }
