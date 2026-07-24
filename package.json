@@ -1,6 +1,6 @@
 {
 	"name": "n8n-nodes-webhound",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Run budgeted Webhound reports and datasets, wait for honest completion, and retrieve the result with its evidence.",
 	"license": "MIT",
 	"homepage": "https://www.webhound.ai",
