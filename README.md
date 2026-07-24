@@ -114,5 +114,6 @@ No live Webhound key is required by the unit tests. They use mocked n8n request 
 
 ## Version history
 
+- `0.1.2`: uses n8n-native operation errors throughout so Creator Portal verification can classify failures correctly.
 - `0.1.1`: provenance release via npm trusted publishing; excludes the TypeScript build cache from the package.
 - `0.1.0`: initial report, dataset, watch/wait, output, evidence, account, and help actions.
