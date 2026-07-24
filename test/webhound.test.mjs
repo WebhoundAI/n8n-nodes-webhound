@@ -18,6 +18,13 @@ import {
 } from '../dist/nodes/Webhound/webhoundTransport.js';
 import { WebhoundApi } from '../dist/credentials/WebhoundApi.credentials.js';
 
+const TEST_NODE = {
+	name: 'Webhound',
+	type: 'webhound',
+	typeVersion: 1,
+	position: [0, 0],
+};
+
 function sseToolResponse(id, structuredContent, summary = 'Completed.') {
 	const envelope = {
 		jsonrpc: '2.0',
@@ -243,14 +250,18 @@ test('failed spend start makes one request and returns a safe error', async () =
 });
 
 test('dataset schema is parsed and mapped without retired fields', () => {
-	const prepared = prepareWebhoundCall('startDataset', {
-		prompt: 'Build a sourced list of ten companies.',
-		budget: 7.5,
-		confirm_spend: true,
-		schemaJson: '{"company":{"type":"string"}}',
-		enableCheckpoints: true,
-		useFreeRunWhenAvailable: false,
-	});
+	const prepared = prepareWebhoundCall(
+		'startDataset',
+		{
+			prompt: 'Build a sourced list of ten companies.',
+			budget: 7.5,
+			confirm_spend: true,
+			schemaJson: '{"company":{"type":"string"}}',
+			enableCheckpoints: true,
+			useFreeRunWhenAvailable: false,
+		},
+		TEST_NODE,
+	);
 	assert.equal(prepared.toolName, 'webhound_start_dataset');
 	assert.deepEqual(prepared.arguments.schema, { company: { type: 'string' } });
 	assert.equal(prepared.arguments.budget, 7.5);
@@ -262,12 +273,16 @@ test('dataset schema is parsed and mapped without retired fields', () => {
 test('invalid dataset schema is rejected locally', () => {
 	assert.throws(
 		() =>
-			prepareWebhoundCall('startDataset', {
-				prompt: 'Build a sourced list of ten companies.',
-				budget: 5,
-				confirm_spend: true,
-				schemaJson: '{not-json}',
-			}),
+			prepareWebhoundCall(
+				'startDataset',
+				{
+					prompt: 'Build a sourced list of ten companies.',
+					budget: 5,
+					confirm_spend: true,
+					schemaJson: '{not-json}',
+				},
+				TEST_NODE,
+			),
 		(error) =>
 			error instanceof WebhoundInputError && /valid JSON/.test(error.message),
 	);
@@ -275,11 +290,15 @@ test('invalid dataset schema is rejected locally', () => {
 
 test('watch maps zero to watch and a bounded wait to wait', () => {
 	assert.deepEqual(
-		prepareWebhoundCall('watchWait', {
-			sessionId: 'session-123',
-			waitSeconds: 0,
-			pollIntervalSeconds: 10,
-		}),
+		prepareWebhoundCall(
+			'watchWait',
+			{
+				sessionId: 'session-123',
+				waitSeconds: 0,
+				pollIntervalSeconds: 10,
+			},
+			TEST_NODE,
+		),
 		{
 			toolName: 'webhound_watch',
 			arguments: { session_id: 'session-123' },
@@ -287,11 +306,15 @@ test('watch maps zero to watch and a bounded wait to wait', () => {
 		},
 	);
 	assert.deepEqual(
-		prepareWebhoundCall('watchWait', {
-			sessionId: 'session-123',
-			waitSeconds: 60,
-			pollIntervalSeconds: 10,
-		}),
+		prepareWebhoundCall(
+			'watchWait',
+			{
+				sessionId: 'session-123',
+				waitSeconds: 60,
+				pollIntervalSeconds: 10,
+			},
+			TEST_NODE,
+		),
 		{
 			toolName: 'webhound_wait',
 			arguments: {
@@ -319,12 +342,21 @@ test('SSE and JSON responses preserve done as the authoritative field', () => {
 			structuredContent: structured,
 		},
 	})}\n\n`;
-	const envelope = parseSseEnvelope(sse);
-	const result = extractToolResult(envelope, id, 'wh_test', 'webhound_watch');
+	const envelope = parseSseEnvelope(sse, TEST_NODE);
+	const result = extractToolResult(
+		envelope,
+		id,
+		'wh_test',
+		'webhound_watch',
+		TEST_NODE,
+	);
 	assert.equal(result.structuredContent.done, false);
 	assert.equal(result.structuredContent.output_ready, true);
 	assert.equal(result.summary, 'Still running.');
-	assert.deepEqual(parseMcpEnvelope(JSON.stringify(envelope)), envelope);
+	assert.deepEqual(
+		parseMcpEnvelope(JSON.stringify(envelope), '', TEST_NODE),
+		envelope,
+	);
 });
 
 test('response errors redact WEBHOUND_KEY', () => {
@@ -341,6 +373,7 @@ test('response errors redact WEBHOUND_KEY', () => {
 				'request-1',
 				secret,
 				'webhound_account',
+				TEST_NODE,
 			),
 		(error) =>
 			!error.message.includes(secret) && error.message.includes('[REDACTED]'),
@@ -348,32 +381,47 @@ test('response errors redact WEBHOUND_KEY', () => {
 });
 
 test('read actions map to the expected MCP tools', () => {
-	assert.equal(prepareWebhoundCall('account', {}).toolName, 'webhound_account');
 	assert.equal(
-		prepareWebhoundCall('getOutput', {
-			sessionId: 'session-123',
-			kind: 'auto',
-			select: 'output',
-			allowPartial: false,
-		}).toolName,
+		prepareWebhoundCall('account', {}, TEST_NODE).toolName,
+		'webhound_account',
+	);
+	assert.equal(
+		prepareWebhoundCall(
+			'getOutput',
+			{
+				sessionId: 'session-123',
+				kind: 'auto',
+				select: 'output',
+				allowPartial: false,
+			},
+			TEST_NODE,
+		).toolName,
 		'webhound_get_output',
 	);
 	assert.equal(
-		prepareWebhoundCall('getEvidencePack', {
-			sessionId: 'session-123',
-			kind: 'auto',
-			includeWorkingDocs: true,
-			includeClaims: true,
-			includeSources: true,
-			allowPartial: false,
-		}).toolName,
+		prepareWebhoundCall(
+			'getEvidencePack',
+			{
+				sessionId: 'session-123',
+				kind: 'auto',
+				includeWorkingDocs: true,
+				includeClaims: true,
+				includeSources: true,
+				allowPartial: false,
+			},
+			TEST_NODE,
+		).toolName,
 		'webhound_get_evidence_pack',
 	);
 	assert.equal(
-		prepareWebhoundCall('help', {
-			topic: 'budget',
-			question: 'How does budget define effort?',
-		}).toolName,
+		prepareWebhoundCall(
+			'help',
+			{
+				topic: 'budget',
+				question: 'How does budget define effort?',
+			},
+			TEST_NODE,
+		).toolName,
 		'webhound_help',
 	);
 });
