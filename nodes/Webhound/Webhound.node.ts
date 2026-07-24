@@ -13,12 +13,8 @@ import {
 	WEBHOUND_OPERATIONS,
 	type WebhoundOperation,
 } from './webhound.constants';
-import { prepareWebhoundCall, WebhoundInputError } from './webhoundParameters';
-import {
-	callWebhoundTool,
-	redactSecret,
-	WebhoundTransportError,
-} from './webhoundTransport';
+import { prepareWebhoundCall } from './webhoundParameters';
+import { callWebhoundTool, redactSecret } from './webhoundTransport';
 
 const operationOptions: INodeProperties['options'] = [
 	{
@@ -434,9 +430,7 @@ function operationParameters(
 function safeErrorMessage(error: unknown, secret: string): string {
 	const fallback = 'Webhound action failed.';
 	const message =
-		error instanceof WebhoundInputError || error instanceof WebhoundTransportError
-			? error.message
-			: fallback;
+		error instanceof NodeOperationError ? error.message : fallback;
 	return redactSecret(message, secret).slice(0, 1_000);
 }
 
@@ -508,7 +502,11 @@ export class Webhound implements INodeType {
 					);
 				}
 				const parameters = operationParameters(this, operation, itemIndex);
-				const prepared = prepareWebhoundCall(operation, parameters);
+				const prepared = prepareWebhoundCall(
+					operation,
+					parameters,
+					this.getNode(),
+				);
 				const result = await callWebhoundTool.call(
 					this,
 					prepared.toolName,
